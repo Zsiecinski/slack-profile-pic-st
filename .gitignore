@@ -14,3 +14,6 @@ uploads/*
 # Generated assets (app creates if missing)
 # static/background.png
 # static/logo.png
+
+# rembg model cache (pre-downloaded at build on Render)
+.cache/

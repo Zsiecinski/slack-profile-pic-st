@@ -75,9 +75,9 @@ ensure_assets()
 
 
 def _warmup_rembg():
-    """Pre-load rembg in background so first upload is fast."""
+    """Pre-load rembg in background so first upload is fast (model pre-cached at build)."""
     import time
-    time.sleep(5)  # Let app bind to port first
+    time.sleep(3)  # Let app bind to port first
     _get_rembg()
 
 

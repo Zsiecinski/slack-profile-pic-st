@@ -2,5 +2,14 @@ services:
   - type: web
     name: staytuned-avatar-generator
     runtime: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      pip install -r requirements.txt
+      python -c "
+      import os
+      os.environ.setdefault('XDG_CACHE_HOME', os.path.join(os.getcwd(), '.cache'))
+      os.makedirs('.cache', exist_ok=True)
+      from rembg import new_session
+      new_session('u2netp')
+      print('rembg model pre-cached')
+      "
     startCommand: bash run.sh
