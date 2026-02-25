@@ -138,7 +138,15 @@
           method: 'POST',
           body: formData,
         });
-        const data = await res.json();
+        const text = await res.text();
+        let data;
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch {
+          throw new Error(res.ok
+            ? 'Invalid response from server. Please try again.'
+            : 'Server error or timeout. Processing can take 30+ seconds on first request—please try again.');
+        }
         if (!res.ok) {
           throw new Error(data.error || 'Upload failed');
         }

@@ -17,11 +17,21 @@ try:
 except ImportError:
     FACE_DETECTION_AVAILABLE = False
 
-try:
-    from rembg import remove as rembg_remove
-    REMBG_AVAILABLE = True
-except ImportError:
-    REMBG_AVAILABLE = False
+# Lazy-load rembg on first upload - keeps startup fast so Render detects the port quickly
+REMBG_AVAILABLE = None  # Set on first use
+_rembg_remove = None
+
+
+def _get_rembg():
+    global REMBG_AVAILABLE, _rembg_remove
+    if _rembg_remove is None:
+        try:
+            from rembg import remove
+            _rembg_remove = remove
+            REMBG_AVAILABLE = True
+        except ImportError:
+            REMBG_AVAILABLE = False
+    return _rembg_remove
 
 BASE_DIR = Path(__file__).resolve().parent
 app = Flask(
@@ -58,9 +68,7 @@ def ensure_assets():
 # Initialize assets on startup
 ensure_assets()
 
-if not REMBG_AVAILABLE:
-    import warnings
-    warnings.warn("rembg not available - background removal disabled. Install with: pip install rembg")
+# Warn only if someone checks before first upload (unusual)
 
 
 def allowed_file(filename):
@@ -174,10 +182,11 @@ def process_avatar(source_path, output_path):
     # Crop to square centered on face (or center if no face detected)
     profile = face_crop_to_square(profile)
 
-    # Remove background BEFORE resize - works better on larger images
-    if REMBG_AVAILABLE:
+    # Remove background BEFORE resize - works better on larger images (lazy-loaded)
+    rembg_fn = _get_rembg()
+    if rembg_fn:
         try:
-            profile = rembg_remove(profile)
+            profile = rembg_fn(profile)
             profile = profile.convert("RGBA")
         except Exception:
             pass  # Fall back to no-removal if rembg fails
