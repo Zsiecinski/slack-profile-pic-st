@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+
+# Uploads (keep folder via .gitkeep)
+uploads/*
+!uploads/.gitkeep
+
+# Generated assets (app creates if missing)
+# static/background.png
+# static/logo.png

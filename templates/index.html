@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StayTuned Avatar Generator</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="card">
+    <h1>StayTuned Avatar Generator</h1>
+    <p class="subtitle">Create Slack-ready branded profile images</p>
+
+    <div class="error-message" id="error-msg"></div>
+
+    <div class="upload-zone" id="upload-zone">
+      <input type="file" id="file-input" accept="image/jpeg,image/png,image/jpg">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      </svg>
+      <p>Drag and drop your photo here</p>
+      <p>or click to browse</p>
+      <p class="filename" id="filename"></p>
+    </div>
+
+    <div class="preview-container" id="preview-container">
+      <img id="preview-img" alt="Preview">
+      <p class="preview-label">Preview (before processing)</p>
+    </div>
+
+    <div class="result-container" id="result-container">
+      <img id="result-img" alt="Generated avatar">
+      <p class="preview-label">Your StayTuned avatar (1024×1024)</p>
+    </div>
+
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <span>Processing...</span>
+    </div>
+
+    <div class="buttons">
+      <button type="button" class="btn btn-primary" id="upload-btn" disabled>
+        Upload & Generate
+      </button>
+      <button type="button" class="btn btn-secondary" id="download-btn" style="display: none;">
+        Download Avatar
+      </button>
+    </div>
+  </div>
+
+  <script>
+    const uploadZone = document.getElementById('upload-zone');
+    const fileInput = document.getElementById('file-input');
+    const filenameEl = document.getElementById('filename');
+    const previewContainer = document.getElementById('preview-container');
+    const previewImg = document.getElementById('preview-img');
+    const resultContainer = document.getElementById('result-container');
+    const resultImg = document.getElementById('result-img');
+    const uploadBtn = document.getElementById('upload-btn');
+    const downloadBtn = document.getElementById('download-btn');
+    const loadingEl = document.getElementById('loading');
+    const errorMsg = document.getElementById('error-msg');
+
+    let selectedFile = null;
+    let downloadUrl = null;
+
+    function showError(msg) {
+      errorMsg.textContent = msg;
+      errorMsg.classList.add('visible');
+    }
+
+    function hideError() {
+      errorMsg.classList.remove('visible');
+      errorMsg.textContent = '';
+    }
+
+    function setState(hasFile, isProcessing, hasResult) {
+      uploadZone.classList.toggle('has-file', hasFile);
+      uploadBtn.disabled = !hasFile || isProcessing;
+      previewContainer.classList.toggle('visible', hasFile && !hasResult);
+      resultContainer.classList.toggle('visible', hasResult);
+      loadingEl.classList.toggle('visible', isProcessing);
+      downloadBtn.style.display = hasResult ? 'flex' : 'none';
+    }
+
+    uploadZone.addEventListener('click', () => fileInput.click());
+
+    uploadZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadZone.classList.add('dragover');
+    });
+
+    uploadZone.addEventListener('dragleave', () => {
+      uploadZone.classList.remove('dragover');
+    });
+
+    uploadZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadZone.classList.remove('dragover');
+      const file = e.dataTransfer?.files?.[0];
+      if (file) handleFile(file);
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (file) handleFile(file);
+    });
+
+    function handleFile(file) {
+      const validTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+      if (!validTypes.includes(file.type)) {
+        showError('Only JPG and PNG files are allowed.');
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        showError('File too large. Maximum size is 5MB.');
+        return;
+      }
+      hideError();
+      selectedFile = file;
+      filenameEl.textContent = file.name;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        previewImg.src = e.target.result;
+        setState(true, false, false);
+      };
+      reader.readAsDataURL(file);
+    }
+
+    uploadBtn.addEventListener('click', async () => {
+      if (!selectedFile) return;
+      hideError();
+      setState(true, true, false);
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      try {
+        const res = await fetch('/upload', {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || 'Upload failed');
+        }
+        downloadUrl = data.download_url;
+        resultImg.src = data.preview_url + '?t=' + Date.now();
+        setState(true, false, true);
+      } catch (err) {
+        showError(err.message || 'Something went wrong. Please try again.');
+        setState(true, false, false);
+      }
+    });
+
+    downloadBtn.addEventListener('click', () => {
+      if (downloadUrl) {
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = 'staytuned-avatar.png';
+        a.click();
+      }
+    });
+  </script>
+</body>
+</html>
