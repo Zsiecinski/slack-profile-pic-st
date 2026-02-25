@@ -1,6 +1,5 @@
-"""StayTuned Avatar Generator - Flask app for creating branded profile images."""
+"""StayTuned Avatar Generator - optimized for 512MB (Render free tier)."""
 import os
-import threading
 
 # Hide GPU from CUDA - prevents onnxruntime GPU discovery warning on Render (no GPU)
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
@@ -11,12 +10,6 @@ from pathlib import Path
 import numpy as np
 from flask import Flask, render_template, request, jsonify, send_file
 from PIL import Image, ImageOps, ImageFilter, ImageEnhance
-
-try:
-    import mediapipe as mp
-    FACE_DETECTION_AVAILABLE = True
-except ImportError:
-    FACE_DETECTION_AVAILABLE = False
 
 # Lazy-load rembg on first upload - keeps startup fast so Render detects the port quickly
 REMBG_AVAILABLE = None  # Set on first use
@@ -50,7 +43,7 @@ STATIC_FOLDER = Path(__file__).resolve().parent / "static"
 OUTPUT_SIZE = 1024
 PROFILE_SCALE = 0.85  # Larger profile - fills frame like example, less empty space at bottom
 EDGE_FEATHER_RADIUS = 6  # Softer, more natural blend (Slack profile style)
-REMBG_MAX_SIZE = 384  # Process at 384px for speed - 4x faster than 768
+REMBG_MAX_SIZE = 320  # Process at 320px - memory-friendly for 512MB instances
 # Vertical offset: slight downward shift so subject isn't floating, bottom feels right
 PROFILE_Y_OFFSET = 20  # Pixels down from center
 BG_COLOR = (25, 32, 72)  # StayTuned blue fallback when background.png is missing
@@ -74,17 +67,6 @@ def ensure_assets():
 ensure_assets()
 
 
-def _warmup_rembg():
-    """Pre-load rembg in background so first upload is fast (model pre-cached at build)."""
-    import time
-    time.sleep(3)  # Let app bind to port first
-    _get_rembg()
-
-
-# Start rembg warmup in background thread (no delay for port binding)
-threading.Thread(target=_warmup_rembg, daemon=True).start()
-
-
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -96,54 +78,6 @@ def center_crop_to_square(img):
     left = (width - size) // 2
     top = (height - size) // 2
     return img.crop((left, top, left + size, top + size))
-
-
-def face_crop_to_square(img):
-    """Crop image to square centered on detected face. Falls back to center crop if no face."""
-    if not FACE_DETECTION_AVAILABLE:
-        return center_crop_to_square(img)
-
-    width, height = img.size
-    img_np = np.array(img.convert("RGB"))
-
-    try:
-        mp_face_detection = mp.solutions.face_detection
-        with mp_face_detection.FaceDetection(
-            model_selection=1, min_detection_confidence=0.5
-        ) as face_detection:
-            results = face_detection.process(img_np)
-
-        if not results.detections:
-            return center_crop_to_square(img)
-
-        # Use largest detected face
-        best = max(
-            results.detections,
-            key=lambda d: (d.location_data.relative_bounding_box.width * d.location_data.relative_bounding_box.height),
-        )
-        bbox = best.location_data.relative_bounding_box
-
-        # Convert to pixel coords (relative 0-1)
-        cx = (bbox.xmin + bbox.width / 2) * width
-        cy = (bbox.ymin + bbox.height / 2) * height
-
-        # Crop square centered on face - tight framing for face-only shot (~1.5x face)
-        face_h = bbox.height * height
-        max_size = min(width, height)
-        size = min(max_size, max(int(face_h * 1.5), 100))
-
-        left = int(cx - size / 2)
-        top = int(cy - size / 2)
-
-        # Clamp to image bounds
-        left = max(0, min(left, width - size))
-        top = max(0, min(top, height - size))
-        right = left + size
-        bottom = top + size
-
-        return img.crop((left, top, right, bottom))
-    except Exception:
-        return center_crop_to_square(img)
 
 
 def fit_background_to_canvas(bg_img, target_size):
@@ -193,8 +127,8 @@ def process_avatar(source_path, output_path):
     profile = ImageOps.exif_transpose(profile)  # Fix orientation from phone/camera EXIF
     profile = profile.convert("RGBA")
 
-    # Crop to square centered on face (or center if no face detected)
-    profile = face_crop_to_square(profile)
+    # Crop to square from center (lightweight for 512MB - no face detection)
+    profile = center_crop_to_square(profile)
 
     # Remove background at 384px for speed - then resize to final (lazy-loaded, u2netp)
     profile_size = int(OUTPUT_SIZE * PROFILE_SCALE)
