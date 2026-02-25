@@ -1,4 +1,9 @@
 """StayTuned Avatar Generator - Flask app for creating branded profile images."""
+import os
+
+# Hide GPU from CUDA - prevents onnxruntime GPU discovery warning on Render (no GPU)
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
+
 import uuid
 from pathlib import Path
 
