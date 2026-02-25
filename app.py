@@ -25,13 +25,13 @@ _rembg_session = None  # Reuse session for faster processing
 
 
 def _get_rembg():
-    """Get rembg remove function with isnet-general-use (faster than default u2net)."""
+    """Get rembg remove function with u2netp (smallest/fastest model, ~4MB)."""
     global REMBG_AVAILABLE, _rembg_remove, _rembg_session
     if _rembg_remove is None:
         try:
             from rembg import remove, new_session
             _rembg_remove = remove
-            _rembg_session = new_session("isnet-general-use")  # Faster than u2net
+            _rembg_session = new_session("u2netp")  # Smallest model, ~4MB, fastest
             REMBG_AVAILABLE = True
         except Exception:
             REMBG_AVAILABLE = False
@@ -50,6 +50,7 @@ STATIC_FOLDER = Path(__file__).resolve().parent / "static"
 OUTPUT_SIZE = 1024
 PROFILE_SCALE = 0.85  # Larger profile - fills frame like example, less empty space at bottom
 EDGE_FEATHER_RADIUS = 6  # Softer, more natural blend (Slack profile style)
+REMBG_MAX_SIZE = 384  # Process at 384px for speed - 4x faster than 768
 # Vertical offset: slight downward shift so subject isn't floating, bottom feels right
 PROFILE_Y_OFFSET = 20  # Pixels down from center
 BG_COLOR = (25, 32, 72)  # StayTuned blue fallback when background.png is missing
@@ -195,17 +196,24 @@ def process_avatar(source_path, output_path):
     # Crop to square centered on face (or center if no face detected)
     profile = face_crop_to_square(profile)
 
-    # Remove background BEFORE resize - works better on larger images (lazy-loaded)
+    # Remove background at 384px for speed - then resize to final (lazy-loaded, u2netp)
+    profile_size = int(OUTPUT_SIZE * PROFILE_SCALE)
     rembg_fn, rembg_session = _get_rembg()
     if rembg_fn and rembg_session:
         try:
-            profile = rembg_fn(profile, session=rembg_session)
-            profile = profile.convert("RGBA")
+            small = profile.resize(
+                (REMBG_MAX_SIZE, REMBG_MAX_SIZE),
+                Image.Resampling.LANCZOS,
+            )
+            small_nobg = rembg_fn(small, session=rembg_session)
+            profile = small_nobg.convert("RGBA").resize(
+                (profile_size, profile_size),
+                Image.Resampling.LANCZOS,
+            )
         except Exception:
-            pass  # Fall back to no-removal if rembg fails
-
-    profile_size = int(OUTPUT_SIZE * PROFILE_SCALE)
-    profile = profile.resize((profile_size, profile_size), Image.Resampling.LANCZOS)
+            profile = profile.resize((profile_size, profile_size), Image.Resampling.LANCZOS)
+    else:
+        profile = profile.resize((profile_size, profile_size), Image.Resampling.LANCZOS)
 
     # Soft, natural edge blend (like the example - well-defined but not harsh)
     if profile.mode == "RGBA" and EDGE_FEATHER_RADIUS > 0:
