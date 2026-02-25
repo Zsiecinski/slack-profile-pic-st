@@ -1,5 +1,6 @@
 """StayTuned Avatar Generator - Flask app for creating branded profile images."""
 import os
+import threading
 
 # Hide GPU from CUDA - prevents onnxruntime GPU discovery warning on Render (no GPU)
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
@@ -20,18 +21,21 @@ except ImportError:
 # Lazy-load rembg on first upload - keeps startup fast so Render detects the port quickly
 REMBG_AVAILABLE = None  # Set on first use
 _rembg_remove = None
+_rembg_session = None  # Reuse session for faster processing
 
 
 def _get_rembg():
-    global REMBG_AVAILABLE, _rembg_remove
+    """Get rembg remove function with isnet-general-use (faster than default u2net)."""
+    global REMBG_AVAILABLE, _rembg_remove, _rembg_session
     if _rembg_remove is None:
         try:
-            from rembg import remove
+            from rembg import remove, new_session
             _rembg_remove = remove
+            _rembg_session = new_session("isnet-general-use")  # Faster than u2net
             REMBG_AVAILABLE = True
-        except ImportError:
+        except Exception:
             REMBG_AVAILABLE = False
-    return _rembg_remove
+    return _rembg_remove, _rembg_session
 
 BASE_DIR = Path(__file__).resolve().parent
 app = Flask(
@@ -68,7 +72,16 @@ def ensure_assets():
 # Initialize assets on startup
 ensure_assets()
 
-# Warn only if someone checks before first upload (unusual)
+
+def _warmup_rembg():
+    """Pre-load rembg in background so first upload is fast."""
+    import time
+    time.sleep(5)  # Let app bind to port first
+    _get_rembg()
+
+
+# Start rembg warmup in background thread (no delay for port binding)
+threading.Thread(target=_warmup_rembg, daemon=True).start()
 
 
 def allowed_file(filename):
@@ -183,10 +196,10 @@ def process_avatar(source_path, output_path):
     profile = face_crop_to_square(profile)
 
     # Remove background BEFORE resize - works better on larger images (lazy-loaded)
-    rembg_fn = _get_rembg()
-    if rembg_fn:
+    rembg_fn, rembg_session = _get_rembg()
+    if rembg_fn and rembg_session:
         try:
-            profile = rembg_fn(profile)
+            profile = rembg_fn(profile, session=rembg_session)
             profile = profile.convert("RGBA")
         except Exception:
             pass  # Fall back to no-removal if rembg fails
