@@ -23,7 +23,12 @@ try:
 except ImportError:
     REMBG_AVAILABLE = False
 
-app = Flask(__name__)
+BASE_DIR = Path(__file__).resolve().parent
+app = Flask(
+    __name__,
+    template_folder=str(BASE_DIR / "templates"),
+    static_folder=str(BASE_DIR / "static"),
+)
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5MB
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png"}
 UPLOAD_FOLDER = Path(__file__).resolve().parent / "uploads"
@@ -211,6 +216,11 @@ def process_avatar(source_path, output_path):
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/health")
+def health():
+    return "ok", 200
 
 
 @app.route("/upload", methods=["POST"])
